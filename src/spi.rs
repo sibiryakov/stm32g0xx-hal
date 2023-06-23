@@ -16,6 +16,36 @@ pub enum Error {
     Crc,
 }
 
+pub enum FIFOLevel {
+    Empty,
+    QuarterFull,
+    HalfFull,
+    Full
+}
+
+fn to_fifolevel(val: u8) -> FIFOLevel {
+    match val {
+        0 => FIFOLevel::Empty,
+        1 => FIFOLevel::QuarterFull,
+        2 => FIFOLevel::HalfFull,
+        3 => FIFOLevel::Full,
+        _ => panic!("unexpceted value")
+    }
+}
+
+pub struct Status {
+    pub tx_lvl: u8,
+    pub rx_lvl: u8,
+    pub fre: bool,
+    pub bsy: bool,
+    pub txe: bool,
+    pub rxne: bool
+}
+
+pub trait SPIStatus {
+    fn status(&self) -> Status;
+}
+
 /// A filler type for when the SCK pin is unnecessary
 pub struct NoSck;
 /// A filler type for when the Miso pin is unnecessary
@@ -270,6 +300,16 @@ macro_rules! spi {
                 } else {
                     nb::Error::WouldBlock
                 })
+            }
+        }
+
+        impl<PINS> SPIStatus for Spi<$SPIX, PINS> {
+            fn status(&self) -> Status {
+                let sr = self.spi.sr.read();
+                Status { tx_lvl: sr.ftlvl().bits(), rx_lvl: sr.frlvl().bits(), fre: sr.tifrfe().bit_is_set(),
+                bsy: sr.bsy().bit_is_set(),
+                txe: sr.txe().bit_is_set(),
+                rxne: sr.rxne().bit_is_set() }
             }
         }
 
