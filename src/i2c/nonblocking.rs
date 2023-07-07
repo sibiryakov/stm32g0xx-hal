@@ -2,7 +2,7 @@
 use crate::gpio::*;
 use crate::gpio::{AltFunction, OpenDrain, Output};
 use crate::i2c::config::Config;
-use crate::i2c::{Error, I2c, I2cDirection, I2cExt, I2cResult, SCLPin, SDAPin};
+use crate::i2c::{EndMarker, Error, I2c, I2cDirection, I2cExt, I2cResult, SCLPin, SDAPin};
 use crate::rcc::*;
 use crate::stm32::{I2C1, I2C2};
 use nb::Error::{Other, WouldBlock};
@@ -215,7 +215,8 @@ macro_rules! i2c {
                     length:0,
                     errors:0,
                     length_write_read:0,
-                    data:[0_u8;255]
+                    data:[0_u8;255],
+		    current_direction: I2cDirection::MasterReadSlaveWrite,
                 }
             }
             pub fn release(self) -> ($I2CX, SDA, SCL) {
@@ -268,11 +269,11 @@ macro_rules! i2c {
                         self.errors += 1;
                         self.watchdog = 0;
                         // Disable I2C processing, resetting all hardware state machines
-                        self.i2c.cr1.modify(|_, w| unsafe {w.pe().clear_bit() } );
+                        self.i2c.cr1.modify(|_, w| w.pe().clear_bit() );
                         // force enough wait states for the pe clear
                         let _ = self.i2c.cr1.read();
                         // Enable the I2C processing again
-                        self.i2c.cr1.modify(|_, w| unsafe {w.pe().set_bit() });
+                        self.i2c.cr1.modify(|_, w| w.pe().set_bit() );
                     },
                     _ => {self.watchdog -= 1},
                 }
@@ -306,7 +307,7 @@ macro_rules! i2c {
                     }
                     return Err( WouldBlock)
                 } else
-                if isr.rxne().bit_is_set() {
+                    if isr.rxne().bit_is_set() {
                     // read byte from the wire
                     if self.index < self.length {
                         self.data[self.index] = self.i2c.rxdr.read().rxdata().bits();
@@ -317,7 +318,8 @@ macro_rules! i2c {
                     }
                     return Err( WouldBlock)
                 } else
-                if isr.stopf().bit_is_set() {
+                    if isr.stopf().bit_is_set() {
+
                     // Clear the stop condition flag
                     self.i2c.icr.write(|w| w.stopcf().set_bit());
                     // Disable the watchdog
@@ -334,9 +336,13 @@ macro_rules! i2c {
                             }  else  {
                                 I2cDirection::MasterWriteSlaveRead
                             };
+			let index = self.index;
+			// Clear the length so we don't think there is still data when we reach the address phase
+			self.length = self.data.len();
+                        self.index = 0;
                         // return the actual amount of data (self.index), not the requested (self.length)
                         // application must evaluate the size of the frame
-                        return Ok( I2cResult::Data(self.address, direction,  &self.data[0..self.index]) )
+                        return Ok( I2cResult::Data(self.address, direction,  &self.data[0..index], EndMarker::Stop) )
                     }
                 }else
                 if isr.tc().bit_is_set() {
@@ -372,16 +378,12 @@ macro_rules! i2c {
                         return Err( WouldBlock)
                     } else
                     if self.index == 0 {
-                        self.i2c.cr2.modify(|_, w| unsafe {
-                            w.stop().set_bit()
-                        });
+                        self.i2c.cr2.modify(|_, w| w.stop().set_bit() );
                         self.errors += 1;
                         return Err( Other(Error::Nack))
                     } else
                     {
-                        self.i2c.cr2.modify(|_, w| unsafe {
-                            w.stop().set_bit()
-                        });
+                        self.i2c.cr2.modify(|_, w| w.stop().set_bit() );
                         self.errors += 1;
                         return Err(Other(Error::IncorrectFrameSize(self.index)))
                     }
@@ -397,7 +399,14 @@ macro_rules! i2c {
 
                 } else
                 if isr.addr().bit_is_set() {
-                    // handle the slave device case, addressed by a master
+		    // Handle the case where there was no stop bit (repeated start)
+		    // In this case there will be data on the buffer which still needs to be delivered
+		    if self.current_direction == I2cDirection::MasterWriteSlaveRead && self.index >= 1 {
+			let index = self.index;
+			self.index = 0;
+			return Ok( I2cResult::Data(self.address, self.current_direction,  &self.data[0..index], EndMarker::StartRepeat) )
+		    }
+		    // handle the slave device case, addressed by a master
                     let current_address = isr.addcode().bits() as u16;
                     self.address = current_address;
                     // guard against misbehavior
@@ -423,7 +432,7 @@ macro_rules! i2c {
                             // return result
                             I2cDirection::MasterWriteSlaveRead
                         };
-
+		    self.current_direction = direction;
                     // do not yet release the clock stretching here
                     return Ok(I2cResult::Addressed(current_address, direction))
                 }
