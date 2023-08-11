@@ -29,10 +29,11 @@ fn to_fifolevel(val: u8) -> FIFOLevel {
         1 => FIFOLevel::QuarterFull,
         2 => FIFOLevel::HalfFull,
         3 => FIFOLevel::Full,
-        _ => panic!("unexpceted value")
+        _ => panic!("unexpected value")
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct Status {
     pub tx_lvl: u8,
     pub rx_lvl: u8,
