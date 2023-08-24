@@ -160,7 +160,7 @@ macro_rules! pwm_q {
     }
 }
 
-#[cfg(any(feature = "stm32g0x1", feature = "stm32g070"))]
+#[cfg(any(feature = "stm32g0x1", feature = "stm32g070", feature = "stm32g030"))]
 macro_rules! pwm_hal {
     ($($TIMX:ident:
         ($CH:ty, $ccxe:ident, $ccmrx_output:ident, $ocxpe:ident, $ocxm:ident, $ccrx:ident, $ccrx_l:ident, $ccrx_h:ident),)+
@@ -292,6 +292,14 @@ pwm_hal! {
 }
 
 #[cfg(feature = "stm32g070")]
+pwm_hal! {
+    TIM3: (Channel1, cc1e, ccmr1_output, oc1pe, oc1m, ccr1, ccr1_l, ccr1_h),
+    TIM3: (Channel2, cc2e, ccmr1_output, oc2pe, oc2m, ccr2, ccr2_l, ccr2_h),
+    TIM3: (Channel3, cc3e, ccmr2_output, oc3pe, oc3m, ccr3, ccr3_l, ccr3_h),
+    TIM3: (Channel4, cc4e, ccmr2_output, oc4pe, oc4m, ccr4, ccr4_l, ccr4_h),
+}
+
+#[cfg(feature = "stm32g030")]
 pwm_hal! {
     TIM3: (Channel1, cc1e, ccmr1_output, oc1pe, oc1m, ccr1, ccr1_l, ccr1_h),
     TIM3: (Channel2, cc2e, ccmr1_output, oc2pe, oc2m, ccr2, ccr2_l, ccr2_h),
