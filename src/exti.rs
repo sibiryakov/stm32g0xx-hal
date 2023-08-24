@@ -1,9 +1,10 @@
 //! External interrupt controller
 use crate::gpio::SignalEdge;
 use crate::stm32::EXTI;
+use defmt::Format;
 
 /// EXTI trigger event
-#[derive(Eq, PartialEq, PartialOrd, Clone, Copy)]
+#[derive(Eq, PartialEq, PartialOrd, Clone, Copy, Debug, Format)]
 pub enum Event {
     GPIO0 = 0,
     GPIO1 = 1,
@@ -43,6 +44,13 @@ pub enum Event {
     UCPD2 = 33,
 }
 
+#[derive(Debug, Copy, Clone, Format)]
+pub struct PendingEvent {
+    pub event: Event,
+    pub edge: SignalEdge
+}
+
+
 impl Event {
     pub(crate) fn from_code(n: u8) -> Event {
         match n {
@@ -80,6 +88,7 @@ pub trait ExtiExt {
     fn unlisten(&self, ev: Event);
     fn is_pending(&self, ev: Event, edge: SignalEdge) -> bool;
     fn unpend(&self, ev: Event);
+    fn first_pending(&self) -> Option<PendingEvent>;
 }
 
 impl ExtiExt for EXTI {
@@ -172,6 +181,22 @@ impl ExtiExt for EXTI {
                 (self.rpr1.read().bits() & mask != 0) && (self.fpr1.read().bits() & mask != 0)
             }
         }
+    }
+
+    fn first_pending(&self) -> Option<PendingEvent> {
+        for line in 0..=TRIGGER_MAX as u8 {
+            let mask = 1 << line;
+            let rising = self.rpr1.read().bits() & mask != 0;
+            let falling = self.fpr1.read().bits() & mask != 0;
+            if rising && falling {
+                return Some(PendingEvent { event: Event::from_code(line), edge: SignalEdge::All });
+            } else if rising {
+                return Some(PendingEvent { event: Event::from_code(line), edge: SignalEdge::Rising });
+            } else if falling {
+                return Some(PendingEvent { event: Event::from_code(line), edge: SignalEdge::Falling });
+            }
+        }
+        None
     }
 
     fn unpend(&self, ev: Event) {
