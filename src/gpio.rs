@@ -473,12 +473,45 @@ macro_rules! gpio {
                         $PXi { _mode: PhantomData }
                     }
 
-                    /// Configures the pin as external trigger
+                    /// Configures the pin as external trigger and pulls it up
                     pub fn listen_pullup(self, edge: SignalEdge, exti: &mut EXTI) -> $PXi<Input<PullUp>> {
                         let offset = 2 * $i;
                         unsafe {
                             let _ = &(*$GPIOX::ptr()).pupdr.modify(|r, w| {
                                 w.bits((r.bits() & !(0b11 << offset)) | (0b01 << offset))
+                            });
+                            &(*$GPIOX::ptr()).moder.modify(|r, w| {
+                                w.bits(r.bits() & !(0b11 << offset))
+                            })
+                        };
+                        let offset = ($i % 4) * 8;
+                        let mask = $Pxn << offset;
+                        let reset = !(0xff << offset);
+                        match $i as u8 {
+                            0..=3   => exti.exticr1.modify(|r, w| unsafe {
+                                w.bits(r.bits() & reset | mask)
+                            }),
+                            4..=7  => exti.exticr2.modify(|r, w| unsafe {
+                                w.bits(r.bits() & reset | mask)
+                            }),
+                            8..=11 => exti.exticr3.modify(|r, w| unsafe {
+                                w.bits(r.bits() & reset | mask)
+                            }),
+                            12..=16 => exti.exticr4.modify(|r, w| unsafe {
+                                w.bits(r.bits() & reset | mask)
+                            }),
+                            _ => unreachable!(),
+                        }
+                        exti.listen(Event::from_code($i), edge);
+                        $PXi { _mode: PhantomData }
+                    }
+
+                    /// Configures the pin as external trigger and pulls it down
+                    pub fn listen_pulldown(self, edge: SignalEdge, exti: &mut EXTI) -> $PXi<Input<PullDown>> {
+                        let offset = 2 * $i;
+                        unsafe {
+                            let _ = &(*$GPIOX::ptr()).pupdr.modify(|r, w| {
+                                w.bits((r.bits() & !(0b11 << offset)) | (0b10 << offset))
                             });
                             &(*$GPIOX::ptr()).moder.modify(|r, w| {
                                 w.bits(r.bits() & !(0b11 << offset))
